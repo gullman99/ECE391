@@ -1,0 +1,94 @@
+Group 37 bug log
+1. (4/6/19) CP3.3: ls does not print with line break
+    author: miaoh2
+    Description: ls is not outputting the correct list of files. Instead of allowing each filename to terminate a line, 
+    the actual terminal output appears to be a melded blob of everything.
+    Resolution: Upon further inspection, each file returned by dir_read has a reported length of 1024. 
+    This is not correct. This causes the problem that a 0 appears after the end of the file name, and stops the print immediately (without account of the newline).
+
+
+2. (4/6/19) CP3.3: Ending executable from shell terminates shell as well
+    author: miaoh2
+    Description: By logging the halt calls in the shell, 
+    it turns out that at the end of each execution invoked from the shell (e.g. 2->1), 
+    the shell would exit as well as 8->0.
+    Resolution: It turns out that ESP and EBP must not be switched until all local variable access is done, because local variables are, well, stack variables,
+    Changing to someone else's kernel stack simply destroys the stack context and introduces unnecessary hurdles such as doubling the halt() calls (why?). 
+    Same for ESP0 in the TSS. Swapping these to the end of the halt sequence solves the issue.
+
+
+3. (4/6/19) CP3.3: cat stuck after reading a file completely
+    author: miaoh2
+    Description: The cat program freezes after reading the given file. Further tracing down the call chain, 
+    the cat program is calling the correct fd only for the first invocation. Every subsequent call refers to fd=0 
+    which is obviously not correct.
+    Resolution:By extracting the write head of read, three problems are observed:
+
+    The write head is counted after it's checked against the length, allowing more bytes read than allowed.
+    The write head in a multi-block scenario would count +1 for each block no matter whether the byte count is within allowed range. Further investigation shows that these are not checked at the block level (the check was commented out).
+    The write head ignores file size.
+
+    The problem is fixed following the correction of all three. The root cause was also confirmed such that because the fd is the next item to buffer on the stack (fd === buf + 1024), a violated range directly causes overwrite of the descriptor.
+
+
+
+4. (4/15/19) Process
+    author: miaoh2
+    Description: In line 105 in process.c, the check should see if the number of in-use processes exceeds 8
+    In the code, it compares to 0, causing out-of-pid issues degrade to a page fault.
+    Resolution: In code rewrite we changed checking process to ensure the correct output and functionality
+
+5. (4/15/19) Terminal write should not terminal at 0
+    author: miaoh2
+    Description:The terminal write function should respect the number of bytes being requested to write. If illegal characters encountered, should carry on printing.
+    Resolution: rewrote terminal write to ensure correct functionality.
+
+6. (4/15/19) File descriptors not cleaned after halt
+    author: miaoh2
+    Description: Close should be called instead of file-close in the halts. Not using it results in exhaustion in Fd
+    Resolution: modified algorithm to make sure clos is called instead of file-close in the halts
+
+7. (3/25/19) read_data, read_dentry_by_name, read_dentry_by_index return values are wrong
+    author: mgulson2
+    Description: these functions have specific return values that were not correct
+    Resolution: we modified the return values so they functioned according to documentation
+
+8. (3/25/19) terminal delete does not function properly
+    author: mgulson2
+    Description: terminal delete is not functioning according to the documentation at this time
+    Resolution: rewrote the terminal delete function with further understanding of the procedure and relevant components
+
+9. (3/27/19) Terminal should block inputs after 128 characters
+    author: miaoh2
+    Description: Per TA suggestion, terminal should stop putting characters onto screens after 128 chars.
+    Resolution: Modify the terminal_handle_key routine to not putc(). Trivial fix.
+
+10. (3/20/19) Terminal does not handle backspaces
+    author: miaoh2
+    Description: Per TA suggestion, terminal should handle backspaces, or it's a hard time for teammates to get further along.
+    REsolution: Modify handler to account for backspaces
+
+11. (3/16/19) Compile-time Warnings in develop branch.
+    author: seths2
+    Description: Currently attempting to compile the kernel dumps numerous warnings, including ambiguous syntax usage and unused variables.
+    Resolution: examined the root cause of warnings and were able to handle them appropriately
+
+12. (3/16/19) rtc test case blocks keyboard input via possible cli()
+    author: miaoh2
+    Description: At this commit, running the RTC (which exits normally) prior to the Terminal test renders keyboard interrupt suppressed in the latter test.
+    Resolution: there was an issue with IF being masked when the RTC is used
+
+
+13. (3/10/19) System crash after keystroke spam
+    author: seths2
+    Description: Crash without error message when multiple keystrokes quickly hit, possible stack corruption caused by keyboard handler?
+    Resolution: problem with memory management, fixed by michael and mak
+
+14. (3/10/19)Error handlers being invoked in the `spin` section
+    author: miaoh2
+    Description: At commit ad24249f (jimmy),
+    enabling sti() at kernel.c:150 causes a Double Fault thrown at the spin section.
+    Adding a manual int $5 or the like verifies correct handling of exceptions.
+    At commit 5de6aaf2 (seth),
+    the spin section throws a #0 Division Error.
+    Resolution: issue having to do with a malfuncting IDT, changed handler and fixed error
